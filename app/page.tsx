@@ -289,54 +289,264 @@ export default function Home() {
         )}
 
         {data && (
-          <div
-            style={{
-              background: "#111",
-              border: `1px solid ${data.motion ? "#f87171" : "#1f1f1f"}`,
-              borderRadius: 4,
-              padding: "20px 24px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <div>
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+              {/* Device + timestamp */}
               <div
                 style={{
-                  fontSize: 10,
-                  letterSpacing: "0.25em",
-                  color: "#333",
-                  marginBottom: 6,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-end",
                 }}
               >
-                MOTION SENSOR
+                <div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "#333",
+                      letterSpacing: "0.2em",
+                      marginBottom: 4,
+                    }}
+                  >
+                    DEVICE
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: "#4ade80",
+                      letterSpacing: "0.1em",
+                    }}
+                  >
+                    {data.device_id?.toUpperCase() ?? "ESP32"}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 13, color: "#444" }}>
+                    {formatDate(data.timestamp)}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 22,
+                      color: "#777",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    {formatTime(data.timestamp)}
+                  </div>
+                </div>
               </div>
 
+              {/* Gauges */}
               <div
                 style={{
-                  fontSize: 24,
-                  fontWeight: 700,
-                  color: data.motion ? "#f87171" : "#4ade80",
-                  letterSpacing: "0.1em",
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 24,
                 }}
               >
-                {data.motion ? "MOTION DETECTED" : "CLEAR"}
+                <div
+                  style={{
+                    background: "#111",
+                    border: "1px solid #1f1f1f",
+                    borderRadius: 4,
+                    padding: "24px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      letterSpacing: "0.25em",
+                      color: "#333",
+                    }}
+                  >
+                    TEMPERATURE
+                  </div>
+                  <div style={{ width: 140, height: 140 }}>
+                    <Gauge
+                      value={data.temperature}
+                      max={50}
+                      color="#fb923c"
+                      unit="°C"
+                    />
+                  </div>
+                  <div style={{ fontSize: 11, color: "#333" }}>
+                    {((data.temperature * 9) / 5 + 32).toFixed(1)}°F
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: "#111",
+                    border: "1px solid #1f1f1f",
+                    borderRadius: 4,
+                    padding: "24px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      letterSpacing: "0.25em",
+                      color: "#333",
+                    }}
+                  >
+                    HUMIDITY
+                  </div>
+                  <div style={{ width: 140, height: 140 }}>
+                    <Gauge
+                      value={data.humidity}
+                      max={100}
+                      color="#38bdf8"
+                      unit="%"
+                    />
+                  </div>
+                  <div style={{ fontSize: 11, color: "#333" }}>RH</div>
+                </div>
+              </div>
+
+              {/* Comfort index */}
+              {comfort && (
+                <div
+                  style={{
+                    background: "#111",
+                    border: `1px solid ${comfort.color}22`,
+                    borderRadius: 4,
+                    padding: "20px 24px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        letterSpacing: "0.25em",
+                        color: "#333",
+                        marginBottom: 4,
+                      }}
+                    >
+                      COMFORT INDEX
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 22,
+                        color: comfort.color,
+                        fontWeight: 700,
+                        letterSpacing: "0.1em",
+                      }}
+                    >
+                      {comfort.label}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div
+                      style={{ fontSize: 10, color: "#333", marginBottom: 4 }}
+                    >
+                      HEAT INDEX
+                    </div>
+                    <div style={{ fontSize: 18, color: "#666" }}>
+                      {getHeatIndex(data.temperature, data.humidity).toFixed(1)}
+                      °C
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Raw readings */}
+              <div
+                style={{
+                  background: "#0d0d0d",
+                  border: "1px solid #1a1a1a",
+                  borderRadius: 4,
+                  padding: "16px 24px",
+                  fontSize: 12,
+                }}
+              >
+                <div
+                  style={{
+                    color: "#333",
+                    letterSpacing: "0.15em",
+                    fontSize: 10,
+                    marginBottom: 12,
+                  }}
+                >
+                  RAW OUTPUT
+                </div>
+                <pre
+                  style={{
+                    margin: 0,
+                    color: "#4ade80",
+                    lineHeight: 1.8,
+                    fontSize: 12,
+                  }}
+                >
+                  {`{
+  "temperature": ${data.temperature.toFixed(2)},
+  "humidity":    ${data.humidity.toFixed(2)},
+  "device_id":   "${data.device_id ?? "esp32"}",
+  "timestamp":   "${data.timestamp}"
+}`}
+                </pre>
               </div>
             </div>
 
             <div
               style={{
-                width: 14,
-                height: 14,
-                borderRadius: "50%",
-                background: data.motion ? "#f87171" : "#4ade80",
-                boxShadow: data.motion
-                  ? "0 0 12px #f87171"
-                  : "0 0 12px #4ade80",
-                animation: data.motion ? "pulse 1s infinite" : "none",
+                background: "#111",
+                border: `1px solid ${data.motion ? "#f87171" : "#1f1f1f"}`,
+                borderRadius: 4,
+                padding: "20px 24px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
               }}
-            />
-          </div>
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    letterSpacing: "0.25em",
+                    color: "#333",
+                    marginBottom: 6,
+                  }}
+                >
+                  MOTION SENSOR
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 24,
+                    fontWeight: 700,
+                    color: data.motion ? "#f87171" : "#4ade80",
+                    letterSpacing: "0.1em",
+                  }}
+                >
+                  {data.motion ? "MOTION DETECTED" : "CLEAR"}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  background: data.motion ? "#f87171" : "#4ade80",
+                  boxShadow: data.motion
+                    ? "0 0 12px #f87171"
+                    : "0 0 12px #4ade80",
+                  animation: data.motion ? "pulse 1s infinite" : "none",
+                }}
+              />
+            </div>
+          </>
         )}
       </main>
 
