@@ -1,18 +1,25 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+);
 
 interface SensorReading {
+  id?: number;
   temperature: number;
   humidity: number;
   lux: number;
-  timestamp: string;
+  motion: boolean;
+  created_at: string;
   device_id?: string;
 }
 
 function formatTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString("en-US", {
+  return new Date(iso).toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -21,8 +28,7 @@ function formatTime(iso: string) {
 }
 
 function formatDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
+  return new Date(iso).toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "2-digit",
@@ -46,41 +52,21 @@ function getHeatIndex(t: number, h: number) {
 function comfortLabel(
   t: number,
   h: number,
-): {
-  label: string;
-  color: string;
-} {
+): { label: string; color: string; bg: string } {
   const hi = getHeatIndex(t, h);
-
-  if (hi < 18) return { label: "COOL", color: "#60a5fa" };
-  if (hi < 26) return { label: "COMFORT", color: "#4ade80" };
-  if (hi < 32) return { label: "WARM", color: "#facc15" };
-  if (hi < 41) return { label: "HOT", color: "#fb923c" };
-
-  return { label: "DANGER", color: "#f87171" };
+  if (hi < 18) return { label: "COOL", color: "#3b82f6", bg: "#eff6ff" };
+  if (hi < 26) return { label: "COMFORT", color: "#16a34a", bg: "#f0fdf4" };
+  if (hi < 32) return { label: "WARM", color: "#d97706", bg: "#fffbeb" };
+  if (hi < 41) return { label: "HOT", color: "#ea580c", bg: "#fff7ed" };
+  return { label: "DANGER", color: "#dc2626", bg: "#fef2f2" };
 }
 
-function lightLabel(lux: number): {
-  label: string;
-  color: string;
-} {
-  if (lux < 10) {
-    return { label: "DARK", color: "#64748b" };
-  }
-
-  if (lux < 50) {
-    return { label: "DIM", color: "#60a5fa" };
-  }
-
-  if (lux < 200) {
-    return { label: "INDOOR", color: "#4ade80" };
-  }
-
-  if (lux < 1000) {
-    return { label: "BRIGHT", color: "#facc15" };
-  }
-
-  return { label: "SUNLIGHT", color: "#fb923c" };
+function lightLabel(lux: number): { label: string; color: string; bg: string } {
+  if (lux < 10) return { label: "DARK", color: "#6b7280", bg: "#f9fafb" };
+  if (lux < 50) return { label: "DIM", color: "#92400e", bg: "#fffbeb" };
+  if (lux < 200) return { label: "INDOOR", color: "#15803d", bg: "#f0fdf4" };
+  if (lux < 1000) return { label: "BRIGHT", color: "#b45309", bg: "#fffbeb" };
+  return { label: "SUNLIGHT", color: "#c2410c", bg: "#fff7ed" };
 }
 
 function Gauge({
@@ -88,257 +74,373 @@ function Gauge({
   max,
   color,
   unit,
+  label,
+  sub,
 }: {
   value: number;
   max: number;
   color: string;
   unit: string;
+  label: string;
+  sub?: string;
 }) {
   const pct = Math.min(Math.max(value / max, 0), 1);
-
-  const r = 52;
+  const r = 48;
   const circ = 2 * Math.PI * r;
-  const arc = circ * 0.75;
+  const arc = circ * 0.72;
   const filled = arc * pct;
-  const offset = circ * 0.125;
+  const offset = circ * 0.14;
 
   return (
-    <svg viewBox="0 0 120 120" className="w-full h-full">
-      <circle
-        cx="60"
-        cy="60"
-        r={r}
-        fill="none"
-        stroke="#1a1a1a"
-        strokeWidth="8"
-        strokeDasharray={`${arc} ${circ - arc}`}
-        strokeDashoffset={-offset}
-        strokeLinecap="round"
-      />
-
-      <circle
-        cx="60"
-        cy="60"
-        r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth="8"
-        strokeDasharray={`${filled} ${circ - filled}`}
-        strokeDashoffset={-offset}
-        strokeLinecap="round"
+    <div
+      style={{
+        background: "#ffffff",
+        border: "1px solid #f0ede8",
+        borderRadius: 20,
+        padding: "28px 20px 20px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 6,
+        boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.03)",
+        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+      }}
+    >
+      <div
         style={{
-          transition: "stroke-dasharray 0.8s cubic-bezier(0.4,0,0.2,1)",
-          filter: `drop-shadow(0 0 6px ${color}88)`,
+          fontSize: 10,
+          letterSpacing: "0.18em",
+          color: "#b8a99a",
+          fontFamily: "'DM Mono', 'Courier New', monospace",
+          fontWeight: 500,
+          marginBottom: 4,
         }}
-      />
-
-      <text
-        x="60"
-        y="55"
-        textAnchor="middle"
-        fill={color}
-        fontSize="22"
-        fontWeight="700"
-        fontFamily="'Courier New', monospace"
       >
-        {value.toFixed(1)}
-      </text>
+        {label}
+      </div>
 
-      <text
-        x="60"
-        y="72"
-        textAnchor="middle"
-        fill="#555"
-        fontSize="11"
-        fontFamily="'Courier New', monospace"
-      >
-        {unit}
-      </text>
-    </svg>
+      <svg viewBox="0 0 110 110" width={130} height={130}>
+        {/* Track */}
+        <circle
+          cx="55"
+          cy="55"
+          r={r}
+          fill="none"
+          stroke="#f5f0eb"
+          strokeWidth="7"
+          strokeDasharray={`${arc} ${circ - arc}`}
+          strokeDashoffset={-offset}
+          strokeLinecap="round"
+        />
+        {/* Fill */}
+        <circle
+          cx="55"
+          cy="55"
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth="7"
+          strokeDasharray={`${filled} ${circ - filled}`}
+          strokeDashoffset={-offset}
+          strokeLinecap="round"
+          style={{
+            transition: "stroke-dasharray 0.9s cubic-bezier(0.4,0,0.2,1)",
+            filter: `drop-shadow(0 0 6px ${color}40)`,
+          }}
+        />
+        {/* Value */}
+        <text
+          x="55"
+          y="50"
+          textAnchor="middle"
+          fill={color}
+          fontSize="20"
+          fontWeight="700"
+          fontFamily="'Georgia', 'Times New Roman', serif"
+        >
+          {value.toFixed(1)}
+        </text>
+        {/* Unit */}
+        <text
+          x="55"
+          y="66"
+          textAnchor="middle"
+          fill="#c4b5a5"
+          fontSize="10"
+          fontFamily="'DM Mono', 'Courier New', monospace"
+        >
+          {unit}
+        </text>
+      </svg>
+
+      {sub && (
+        <div
+          style={{
+            fontSize: 11,
+            color: "#c4b5a5",
+            fontFamily: "'DM Mono', monospace",
+          }}
+        >
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusDot({ status }: { status: string }) {
+  const color =
+    status === "ok" ? "#86efac" : status === "error" ? "#fca5a5" : "#fcd34d";
+  const glow =
+    status === "ok" ? "#86efac" : status === "error" ? "#fca5a5" : "#fcd34d";
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        width: 7,
+        height: 7,
+        borderRadius: "50%",
+        background: color,
+        boxShadow: `0 0 0 2px ${glow}44, 0 0 10px ${glow}66`,
+        animation:
+          status === "ok" ? "breathe 2.5s ease-in-out infinite" : "none",
+        flexShrink: 0,
+      }}
+    />
   );
 }
 
 export default function Home() {
   const [data, setData] = useState<SensorReading | null>(null);
-
   const [status, setStatus] = useState<"loading" | "ok" | "error" | "waiting">(
     "loading",
   );
-
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
-
   const [tick, setTick] = useState(0);
-
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await fetch("/api/sensor");
-
-      const json = await res.json();
-
-      if (json.data) {
-        setData(json.data);
-        setStatus("ok");
-      } else {
-        setStatus("waiting");
-      }
-    } catch {
-      setStatus("error");
-    }
-
-    setLastFetch(new Date());
-  }, []);
+  const [flash, setFlash] = useState(false);
 
   useEffect(() => {
-    const run = () => {
-      fetchData();
-      setTick((t) => t + 1);
-    };
+    // 1. Load latest on mount
+    supabase
+      .from("sensor_readings")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single()
+      .then(({ data: row, error }) => {
+        if (row && !error) {
+          setData(row);
+          setStatus("ok");
+        } else {
+          setStatus("waiting");
+        }
+        setLastFetch(new Date());
+      });
 
-    const initial = setTimeout(run, 0);
-
-    const interval = setInterval(run, 5000);
+    // 2. Realtime subscription
+    const channel = supabase
+      .channel("sensor_live")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "sensor_readings" },
+        (payload) => {
+          setData(payload.new as SensorReading);
+          setStatus("ok");
+          setLastFetch(new Date());
+          setTick((t) => t + 1);
+          setFlash(true);
+          setTimeout(() => setFlash(false), 600);
+        },
+      )
+      .subscribe();
 
     return () => {
-      clearTimeout(initial);
-      clearInterval(interval);
+      supabase.removeChannel(channel);
     };
-  }, [fetchData]);
+  }, []);
 
   const comfort = data ? comfortLabel(data.temperature, data.humidity) : null;
-
-  const light = data ? lightLabel(data.lux) : null;
+  const light = data ? lightLabel(data.lux ?? 0) : null;
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: "#0a0a0a",
-        color: "#e0e0e0",
-        fontFamily: "'Courier New', Courier, monospace",
+        background: "#faf9f7",
+        color: "#2d2520",
+        fontFamily: "'DM Mono', 'Courier New', monospace",
         display: "flex",
         flexDirection: "column",
       }}
     >
-      {/* Header */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap');
+
+        @keyframes breathe {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.6; transform: scale(0.85); }
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes flashPulse {
+          0%   { box-shadow: 0 0 0 0 rgba(134,239,172,0.5); }
+          70%  { box-shadow: 0 0 0 10px rgba(134,239,172,0); }
+          100% { box-shadow: 0 0 0 0 rgba(134,239,172,0); }
+        }
+
+        .card-hover:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06) !important;
+        }
+
+        .data-appear {
+          animation: fadeIn 0.4s ease forwards;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        @media (max-width: 680px) {
+          .gauge-grid { grid-template-columns: 1fr 1fr !important; }
+          .header-inner { flex-direction: column; gap: 10px; align-items: flex-start !important; }
+        }
+
+        @media (max-width: 420px) {
+          .gauge-grid { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
+
+      {/* ── Header ── */}
       <header
         style={{
-          borderBottom: "1px solid #1f1f1f",
-          padding: "20px 32px",
+          borderBottom: "1px solid #ede9e4",
+          padding: "18px 32px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          background: "#0d0d0d",
+          background: "rgba(255,255,255,0.8)",
+          backdropFilter: "blur(8px)",
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div
+          className="header-inner"
+          style={{ display: "flex", alignItems: "center", gap: 12 }}
+        >
+          <StatusDot status={status} />
           <span
             style={{
-              display: "inline-block",
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background:
-                status === "ok"
-                  ? "#4ade80"
-                  : status === "error"
-                    ? "#f87171"
-                    : "#facc15",
-
-              boxShadow:
-                status === "ok"
-                  ? "0 0 8px #4ade80"
-                  : status === "error"
-                    ? "0 0 8px #f87171"
-                    : "0 0 8px #facc15",
-
-              animation: status === "ok" ? "pulse 2s infinite" : "none",
-            }}
-          />
-
-          <span
-            style={{
-              fontSize: 13,
-              letterSpacing: "0.15em",
-              color: "#555",
+              fontSize: 11,
+              letterSpacing: "0.2em",
+              color: "#b8a99a",
               textTransform: "uppercase",
+              fontWeight: 500,
             }}
           >
-            DHT22 · BH1750 · ESP32
+            ESP32 · DHT22 · PIR
           </span>
         </div>
 
-        <div style={{ textAlign: "right" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          {lastFetch && (
+            <div style={{ textAlign: "right" }}>
+              <div
+                style={{
+                  fontSize: 9,
+                  color: "#c4b5a5",
+                  letterSpacing: "0.15em",
+                  marginBottom: 2,
+                }}
+              >
+                LAST UPDATE
+              </div>
+              <div style={{ fontSize: 12, color: "#8a7a6e" }}>
+                {lastFetch.toLocaleTimeString("en-US", { hour12: false })}
+              </div>
+            </div>
+          )}
           <div
             style={{
-              fontSize: 11,
-              color: "#333",
-              letterSpacing: "0.1em",
+              fontSize: 9,
+              color: "#d4c9bc",
+              letterSpacing: "0.12em",
+              background: "#f5f2ee",
+              padding: "4px 10px",
+              borderRadius: 20,
             }}
           >
-            LAST SYNC
-          </div>
-
-          <div style={{ fontSize: 12, color: "#555" }}>
-            {lastFetch
-              ? lastFetch.toLocaleTimeString("en-US", {
-                  hour12: false,
-                })
-              : "—"}
+            LIVE #{tick}
           </div>
         </div>
       </header>
 
-      {/* Main */}
+      {/* ── Main ── */}
       <main
         style={{
           flex: 1,
-          maxWidth: 920,
+          maxWidth: 860,
           width: "100%",
           margin: "0 auto",
-          padding: "48px 24px",
+          padding: "44px 24px 60px",
         }}
       >
+        {/* Loading */}
         {status === "loading" && (
           <div
             style={{
               textAlign: "center",
-              color: "#333",
-              paddingTop: 80,
-              fontSize: 13,
-              letterSpacing: "0.2em",
+              paddingTop: 100,
+              color: "#c4b5a5",
+              fontSize: 11,
+              letterSpacing: "0.25em",
             }}
           >
-            INITIALIZING...
+            CONNECTING...
           </div>
         )}
 
+        {/* Waiting */}
         {status === "waiting" && (
-          <div style={{ textAlign: "center", paddingTop: 80 }}>
+          <div style={{ textAlign: "center", paddingTop: 100 }}>
             <div
               style={{
-                fontSize: 13,
-                color: "#555",
+                fontSize: 11,
+                color: "#b8a99a",
                 letterSpacing: "0.2em",
-                marginBottom: 12,
+                marginBottom: 10,
               }}
             >
               AWAITING SENSOR DATA
             </div>
-
-            <div style={{ fontSize: 11, color: "#333" }}>
-              POST to <code style={{ color: "#4ade80" }}>/api/sensor</code> from
-              your ESP32
+            <div style={{ fontSize: 10, color: "#d4c9bc" }}>
+              POST to{" "}
+              <code
+                style={{
+                  color: "#c2410c",
+                  background: "#fff7ed",
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                }}
+              >
+                /api/sensor
+              </code>
             </div>
           </div>
         )}
 
+        {/* Error */}
         {status === "error" && (
           <div
             style={{
               textAlign: "center",
-              color: "#f87171",
-              paddingTop: 80,
-              fontSize: 13,
+              paddingTop: 100,
+              color: "#fca5a5",
+              fontSize: 11,
               letterSpacing: "0.2em",
             }}
           >
@@ -346,325 +448,329 @@ export default function Home() {
           </div>
         )}
 
+        {/* Data */}
         {data && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-            {/* Device + Timestamp */}
+          <div
+            className="data-appear"
+            style={{ display: "flex", flexDirection: "column", gap: 20 }}
+          >
+            {/* Device + time row */}
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                alignItems: "flex-end",
+                alignItems: "center",
+                padding: "16px 20px",
+                background: "#ffffff",
+                border: "1px solid #f0ede8",
+                borderRadius: 16,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                ...(flash ? { animation: "flashPulse 0.6s ease" } : {}),
               }}
             >
               <div>
                 <div
                   style={{
-                    fontSize: 10,
-                    color: "#333",
+                    fontSize: 9,
+                    color: "#c4b5a5",
                     letterSpacing: "0.2em",
                     marginBottom: 4,
                   }}
                 >
                   DEVICE
                 </div>
-
                 <div
                   style={{
                     fontSize: 13,
-                    color: "#4ade80",
-                    letterSpacing: "0.1em",
+                    color: "#c2410c",
+                    letterSpacing: "0.08em",
+                    fontWeight: 600,
                   }}
                 >
                   {data.device_id?.toUpperCase() ?? "ESP32"}
                 </div>
               </div>
 
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 13, color: "#444" }}>
-                  {formatDate(data.timestamp)}
-                </div>
-
-                <div
+              {/* Motion badge */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  background: data.motion ? "#f0fdf4" : "#faf9f7",
+                  border: `1px solid ${data.motion ? "#bbf7d0" : "#ede9e4"}`,
+                  borderRadius: 24,
+                  padding: "6px 14px",
+                }}
+              >
+                <span
                   style={{
-                    fontSize: 22,
-                    color: "#777",
-                    letterSpacing: "0.05em",
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: data.motion ? "#22c55e" : "#d4c9bc",
+                    display: "inline-block",
+                    boxShadow: data.motion ? "0 0 8px #22c55e88" : "none",
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: data.motion ? "#16a34a" : "#b8a99a",
+                    letterSpacing: "0.15em",
                   }}
                 >
-                  {formatTime(data.timestamp)}
+                  {data.motion ? "MOTION" : "STILL"}
+                </span>
+              </div>
+
+              <div style={{ textAlign: "right" }}>
+                <div
+                  style={{ fontSize: 11, color: "#b8a99a", marginBottom: 2 }}
+                >
+                  {formatDate(data.created_at)}
+                </div>
+                <div
+                  style={{
+                    fontSize: 18,
+                    color: "#5a3e30",
+                    fontFamily: "'Georgia', serif",
+                    letterSpacing: "0.04em",
+                  }}
+                >
+                  {formatTime(data.created_at)}
                 </div>
               </div>
             </div>
 
             {/* Gauges */}
             <div
+              className="gauge-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(3, 1fr)",
-                gap: 24,
+                gap: 16,
               }}
             >
-              {/* Temperature */}
               <div
-                style={{
-                  background: "#111",
-                  border: "1px solid #1f1f1f",
-                  borderRadius: 4,
-                  padding: "24px",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 8,
-                }}
+                className="card-hover"
+                style={{ transition: "transform 0.2s, box-shadow 0.2s" }}
               >
-                <div
-                  style={{
-                    fontSize: 10,
-                    letterSpacing: "0.25em",
-                    color: "#333",
-                  }}
-                >
-                  TEMPERATURE
-                </div>
-
-                <div style={{ width: 140, height: 140 }}>
-                  <Gauge
-                    value={data.temperature}
-                    max={50}
-                    color="#fb923c"
-                    unit="°C"
-                  />
-                </div>
-
-                <div style={{ fontSize: 11, color: "#333" }}>
-                  {((data.temperature * 9) / 5 + 32).toFixed(1)}°F
-                </div>
+                <Gauge
+                  value={data.temperature}
+                  max={50}
+                  color="#f97316"
+                  unit="°C"
+                  label="TEMPERATURE"
+                  sub={`${((data.temperature * 9) / 5 + 32).toFixed(1)}°F`}
+                />
               </div>
-
-              {/* Humidity */}
               <div
-                style={{
-                  background: "#111",
-                  border: "1px solid #1f1f1f",
-                  borderRadius: 4,
-                  padding: "24px",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 8,
-                }}
+                className="card-hover"
+                style={{ transition: "transform 0.2s, box-shadow 0.2s" }}
               >
-                <div
-                  style={{
-                    fontSize: 10,
-                    letterSpacing: "0.25em",
-                    color: "#333",
-                  }}
-                >
-                  HUMIDITY
-                </div>
-
-                <div style={{ width: 140, height: 140 }}>
-                  <Gauge
-                    value={data.humidity}
-                    max={100}
-                    color="#38bdf8"
-                    unit="%"
-                  />
-                </div>
-
-                <div style={{ fontSize: 11, color: "#333" }}>RH</div>
+                <Gauge
+                  value={data.humidity}
+                  max={100}
+                  color="#38bdf8"
+                  unit="%"
+                  label="HUMIDITY"
+                  sub="REL. HUMIDITY"
+                />
               </div>
-
-              {/* Light */}
               <div
-                style={{
-                  background: "#111",
-                  border: "1px solid #1f1f1f",
-                  borderRadius: 4,
-                  padding: "24px",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 8,
-                }}
+                className="card-hover"
+                style={{ transition: "transform 0.2s, box-shadow 0.2s" }}
               >
-                <div
-                  style={{
-                    fontSize: 10,
-                    letterSpacing: "0.25em",
-                    color: "#333",
-                  }}
-                >
-                  LIGHT
-                </div>
-
-                <div style={{ width: 140, height: 140 }}>
-                  <Gauge
-                    value={Math.min(data.lux, 1000)}
-                    max={1000}
-                    color="#facc15"
-                    unit="lx"
-                  />
-                </div>
-
-                <div style={{ fontSize: 11, color: "#333" }}>BH1750 SENSOR</div>
+                <Gauge
+                  value={Math.min(data.lux ?? 0, 1000)}
+                  max={1000}
+                  color="#fbbf24"
+                  unit="lx"
+                  label="LIGHT"
+                  sub="BH1750"
+                />
               </div>
             </div>
 
-            {/* Comfort Index */}
-            {comfort && (
-              <div
-                style={{
-                  background: "#111",
-                  border: `1px solid ${comfort.color}22`,
-                  borderRadius: 4,
-                  padding: "20px 24px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <div>
+            {/* Comfort + Light condition row */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 16,
+              }}
+            >
+              {comfort && (
+                <div
+                  style={{
+                    background: comfort.bg,
+                    border: `1px solid ${comfort.color}22`,
+                    borderRadius: 16,
+                    padding: "20px 22px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                  }}
+                >
                   <div
                     style={{
-                      fontSize: 10,
-                      letterSpacing: "0.25em",
-                      color: "#333",
-                      marginBottom: 4,
+                      fontSize: 9,
+                      letterSpacing: "0.2em",
+                      color: "#b8a99a",
                     }}
                   >
                     COMFORT INDEX
                   </div>
-
                   <div
                     style={{
-                      fontSize: 22,
-                      color: comfort.color,
+                      fontSize: 26,
                       fontWeight: 700,
-                      letterSpacing: "0.1em",
+                      color: comfort.color,
+                      letterSpacing: "0.06em",
                     }}
                   >
                     {comfort.label}
                   </div>
-                </div>
-
-                <div style={{ textAlign: "right" }}>
                   <div
                     style={{
-                      fontSize: 10,
-                      color: "#333",
-                      marginBottom: 4,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-end",
                     }}
                   >
-                    HEAT INDEX
-                  </div>
-
-                  <div style={{ fontSize: 18, color: "#666" }}>
-                    {getHeatIndex(data.temperature, data.humidity).toFixed(1)}
-                    °C
+                    <div style={{ fontSize: 10, color: "#b8a99a" }}>
+                      HEAT INDEX
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        color: comfort.color,
+                        fontFamily: "'Georgia', serif",
+                      }}
+                    >
+                      {getHeatIndex(data.temperature, data.humidity).toFixed(1)}
+                      °C
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Light Condition */}
-            {light && (
-              <div
-                style={{
-                  background: "#111",
-                  border: `1px solid ${light.color}22`,
-                  borderRadius: 4,
-                  padding: "20px 24px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <div>
+              {light && (
+                <div
+                  style={{
+                    background: light.bg,
+                    border: `1px solid ${light.color}22`,
+                    borderRadius: 16,
+                    padding: "20px 22px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                  }}
+                >
                   <div
                     style={{
-                      fontSize: 10,
-                      letterSpacing: "0.25em",
-                      color: "#333",
-                      marginBottom: 6,
+                      fontSize: 9,
+                      letterSpacing: "0.2em",
+                      color: "#b8a99a",
                     }}
                   >
-                    LIGHT SENSOR · BH1750
+                    LIGHT CONDITION
                   </div>
-
                   <div
                     style={{
-                      fontSize: 24,
+                      fontSize: 26,
                       fontWeight: 700,
                       color: light.color,
-                      letterSpacing: "0.1em",
+                      letterSpacing: "0.06em",
                     }}
                   >
                     {light.label}
                   </div>
-                </div>
-
-                <div style={{ textAlign: "right" }}>
                   <div
                     style={{
-                      fontSize: 10,
-                      color: "#333",
-                      marginBottom: 4,
-                      letterSpacing: "0.15em",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-end",
                     }}
                   >
-                    ILLUMINANCE
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 22,
-                      color: light.color,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {data.lux.toFixed(0)} lx
+                    <div style={{ fontSize: 10, color: "#b8a99a" }}>
+                      ILLUMINANCE
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        color: light.color,
+                        fontFamily: "'Georgia', serif",
+                      }}
+                    >
+                      {(data.lux ?? 0).toFixed(0)} lx
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* Raw Output */}
+            {/* Raw output */}
             <div
               style={{
-                background: "#0d0d0d",
-                border: "1px solid #1a1a1a",
-                borderRadius: 4,
-                padding: "16px 24px",
-                fontSize: 12,
+                background: "#ffffff",
+                border: "1px solid #f0ede8",
+                borderRadius: 16,
+                padding: "18px 22px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
               }}
             >
               <div
                 style={{
-                  color: "#333",
-                  letterSpacing: "0.15em",
-                  fontSize: 10,
-                  marginBottom: 12,
+                  fontSize: 9,
+                  color: "#c4b5a5",
+                  letterSpacing: "0.2em",
+                  marginBottom: 14,
                 }}
               >
-                RAW OUTPUT
+                RAW PAYLOAD
               </div>
-
               <pre
                 style={{
                   margin: 0,
-                  color: "#4ade80",
-                  lineHeight: 1.8,
-                  fontSize: 12,
+                  fontSize: 11,
+                  lineHeight: 1.9,
+                  color: "#8a7a6e",
+                  fontFamily: "'DM Mono', 'Courier New', monospace",
                 }}
               >
                 {`{
-  "temperature": ${data.temperature.toFixed(2)},
-  "humidity":    ${data.humidity.toFixed(2)},
-  "lux":         ${data.lux.toFixed(0)},
-  "device_id":   "${data.device_id ?? "esp32"}",
-  "timestamp":   "${data.timestamp}"
+  "temperature": `}
+                <span style={{ color: "#f97316" }}>
+                  {data.temperature.toFixed(2)}
+                </span>
+                {`,
+  "humidity":    `}
+                <span style={{ color: "#38bdf8" }}>
+                  {data.humidity.toFixed(2)}
+                </span>
+                {`,
+  "lux":         `}
+                <span style={{ color: "#fbbf24" }}>
+                  {(data.lux ?? 0).toFixed(0)}
+                </span>
+                {`,
+  "motion":      `}
+                <span style={{ color: data.motion ? "#22c55e" : "#b8a99a" }}>
+                  {String(data.motion)}
+                </span>
+                {`,
+  "device_id":   `}
+                <span style={{ color: "#c2410c" }}>
+                  "{data.device_id ?? "esp32"}"
+                </span>
+                {`,
+  "created_at":  `}
+                <span style={{ color: "#94a3b8" }}>"{data.created_at}"</span>
+                {`
 }`}
               </pre>
             </div>
@@ -672,44 +778,22 @@ export default function Home() {
         )}
       </main>
 
-      {/* Footer */}
+      {/* ── Footer ── */}
       <footer
         style={{
-          borderTop: "1px solid #1a1a1a",
-          padding: "14px 32px",
+          borderTop: "1px solid #ede9e4",
+          padding: "12px 32px",
           display: "flex",
           justifyContent: "space-between",
-          fontSize: 10,
-          color: "#2a2a2a",
+          fontSize: 9,
+          color: "#d4c9bc",
           letterSpacing: "0.15em",
+          background: "rgba(255,255,255,0.6)",
         }}
       >
-        <span>AUTO-REFRESH · 5s</span>
-        <span>POLL #{tick}</span>
+        <span>REALTIME · SUPABASE</span>
+        <span>{data?.device_id?.toUpperCase() ?? "—"} · IoT DASHBOARD</span>
       </footer>
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-
-        * {
-          box-sizing: border-box;
-        }
-
-        @media (max-width: 768px) {
-          main {
-            padding: 32px 16px !important;
-          }
-        }
-
-        @media (max-width: 720px) {
-          .mobile-grid {
-            grid-template-columns: 1fr !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }

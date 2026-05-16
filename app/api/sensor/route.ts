@@ -1,51 +1,52 @@
 // app/api/sensor/route.ts
+import { createClient } from "@supabase/supabase-js";
 
-interface SensorReading {
-  temperature: number;
-  humidity: number;
-  lux: number;
-  timestamp: string;
-  device_id?: string;
-}
-
-let latestReading: SensorReading | null = null;
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+);
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const { temperature, humidity, lux, motion, device_id } = body;
 
-    const { temperature, humidity, lux, device_id } = body;
-
-    if (
-      temperature === undefined ||
-      humidity === undefined ||
-      lux === undefined
-    ) {
+    if (temperature === undefined || humidity === undefined) {
       return Response.json(
         { error: "Missing required fields" },
         { status: 400 },
       );
     }
 
-    latestReading = {
-      temperature: Number(temperature),
-      humidity: Number(humidity),
-      lux: Number(lux),
-      timestamp: new Date().toISOString(),
-      device_id: device_id ?? "esp32",
-    };
+    const { data, error } = await supabase
+      .from("sensor_readings")
+      .insert({
+        temperature: Number(temperature),
+        humidity: Number(humidity),
+        lux: lux !== undefined ? Number(lux) : 0,
+        motion: Boolean(motion),
+        device_id: device_id ?? "esp32",
+      })
+      .select()
+      .single();
 
-    return Response.json({
-      ok: true,
-      data: latestReading,
-    });
-  } catch {
-    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+    if (error) throw error;
+
+    return Response.json({ ok: true, data });
+  } catch (err) {
+    console.error(err);
+    return Response.json({ error: "Failed to insert" }, { status: 500 });
   }
 }
 
 export async function GET() {
-  return Response.json({
-    data: latestReading,
-  });
+  const { data, error } = await supabase
+    .from("sensor_readings")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error) return Response.json({ data: null });
+  return Response.json({ data });
 }
