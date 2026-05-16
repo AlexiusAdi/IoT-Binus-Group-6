@@ -14,6 +14,8 @@ interface SensorReading {
   humidity: number;
   lux: number;
   motion: boolean;
+  human_detected?: boolean;
+  vision_checked?: boolean;
   created_at: string;
   device_id?: string;
 }
@@ -528,6 +530,42 @@ export default function Home() {
                   {data.motion ? "MOTION" : "STILL"}
                 </span>
               </div>
+
+              {data.vision_checked && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    background: data.human_detected ? "#f0fdf4" : "#faf9f7",
+                    border: `1px solid ${data.human_detected ? "#bbf7d0" : "#ede9e4"}`,
+                    borderRadius: 24,
+                    padding: "6px 14px",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: data.human_detected ? "#22c55e" : "#d4c9bc",
+                      display: "inline-block",
+                      boxShadow: data.human_detected
+                        ? "0 0 8px #22c55e88"
+                        : "none",
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: data.human_detected ? "#16a34a" : "#b8a99a",
+                      letterSpacing: "0.15em",
+                    }}
+                  >
+                    {data.human_detected ? "HUMAN" : "NO HUMAN"}
+                  </span>
+                </div>
+              )}
 
               <div style={{ textAlign: "right" }}>
                 <div

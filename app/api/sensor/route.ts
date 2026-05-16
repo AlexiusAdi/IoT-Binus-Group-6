@@ -1,4 +1,3 @@
-// app/api/sensor/route.ts
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -9,7 +8,15 @@ const supabase = createClient(
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { temperature, humidity, lux, motion, device_id } = body;
+    const {
+      temperature,
+      humidity,
+      lux,
+      motion,
+      device_id,
+      human_detected,
+      vision_checked,
+    } = body;
 
     if (temperature === undefined || humidity === undefined) {
       return Response.json(
@@ -26,12 +33,13 @@ export async function POST(req: Request) {
         lux: lux !== undefined ? Number(lux) : 0,
         motion: Boolean(motion),
         device_id: device_id ?? "esp32",
+        human_detected: Boolean(human_detected),
+        vision_checked: Boolean(vision_checked),
       })
       .select()
       .single();
 
     if (error) throw error;
-
     return Response.json({ ok: true, data });
   } catch (err) {
     console.error(err);
@@ -45,7 +53,7 @@ export async function GET() {
     .select("*")
     .order("created_at", { ascending: false })
     .limit(1)
-    .maybeSingle(); // ← was .single()
+    .maybeSingle();
 
   if (error) return Response.json({ data: null });
   return Response.json({ data });

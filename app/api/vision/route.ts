@@ -4,63 +4,27 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 export async function POST(req: Request) {
   try {
-    const imageBuffer = Buffer.from(await req.arrayBuffer());
+    const imageBytes = await req.arrayBuffer();
+    const base64 = Buffer.from(imageBytes).toString("base64");
 
-    if (!imageBuffer.length) {
-      return Response.json({ error: "No image received" }, { status: 400 });
-    }
-
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-    });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const result = await model.generateContent([
       {
         inlineData: {
-          data: imageBuffer.toString("base64"),
           mimeType: "image/jpeg",
+          data: base64,
         },
       },
-      `
-Analyze this image.
-
-Answer ONLY with:
-YES
-or
-NO
-
-Question:
-Is there a real human person visible in this image?
-
-Ignore:
-- posters
-- photos
-- screens
-- reflections
-- dolls
-- toys
-- mannequins
-`,
+      "Is there a human in this image? Answer only: yes or no",
     ]);
 
-    const text = result.response.text().trim().toUpperCase();
+    const answer = result.response.text().toLowerCase().trim();
+    const human = answer.startsWith("yes");
 
-    const humanDetected = text.includes("YES");
-
-    console.log("Gemini response:", text);
-
-    return Response.json({
-      humanDetected,
-    });
-  } catch (error) {
-    console.error("Vision API error:", error);
-
-    return Response.json(
-      {
-        humanDetected: false,
-        error: String(error),
-      },
-      { status: 500 },
-    );
+    return Response.json({ human });
+  } catch (err) {
+    console.error(err);
+    return Response.json({ error: "Vision check failed" }, { status: 500 });
   }
 }
