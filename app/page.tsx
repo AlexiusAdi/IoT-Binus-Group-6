@@ -219,6 +219,9 @@ export default function Home() {
   const [tick, setTick] = useState(0);
   const [flash, setFlash] = useState(false);
 
+  console.log("URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+  console.log("KEY:", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
   useEffect(() => {
     // 1. Load latest on mount
     supabase
@@ -228,6 +231,8 @@ export default function Home() {
       .limit(1)
       .maybeSingle() // ← was .single()
       .then(({ data: row, error }) => {
+        console.log("row:", row);
+        console.log("error:", error); // ← add this
         if (row && !error) {
           setData(row);
           setStatus("ok");
