@@ -45,7 +45,7 @@ export async function GET() {
     .select("*")
     .order("created_at", { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle(); // ← was .single()
 
   if (error) return Response.json({ data: null });
   return Response.json({ data });

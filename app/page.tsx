@@ -226,7 +226,7 @@ export default function Home() {
       .select("*")
       .order("created_at", { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle() // ← was .single()
       .then(({ data: row, error }) => {
         if (row && !error) {
           setData(row);
@@ -765,11 +765,13 @@ export default function Home() {
                 {`,
   "device_id":   `}
                 <span style={{ color: "#c2410c" }}>
-                  "{data.device_id ?? "esp32"}"
+                  &quot;{data.device_id ?? "esp32"}&quot;
                 </span>
                 {`,
   "created_at":  `}
-                <span style={{ color: "#94a3b8" }}>"{data.created_at}"</span>
+                <span style={{ color: "#94a3b8" }}>
+                  &quot;{data.created_at}&quot;
+                </span>
                 {`
 }`}
               </pre>
