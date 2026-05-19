@@ -1,41 +1,48 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+// app/api/vision/route.ts
+import { NextRequest } from "next/server";
 
-export async function POST(req: Request) {
-  const apiKey = process.env.GEMINI_API_KEY;
+export async function POST(req: NextRequest) {
+  const apiKey = process.env.ROBOFLOW_API_KEY;
 
   if (!apiKey) {
-    return Response.json({ error: "Missing GEMINI_API_KEY" }, { status: 500 });
+    return Response.json(
+      { error: "Missing ROBOFLOW_API_KEY" },
+      { status: 500 },
+    );
   }
-
-  const genAI = new GoogleGenerativeAI(apiKey);
 
   try {
     const imageBytes = await req.arrayBuffer();
     const base64 = Buffer.from(imageBytes).toString("base64");
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-
-    const result = await model.generateContent([
+    const response = await fetch(
+      `https://detect.roboflow.com/coco/7?api_key=${apiKey}`,
       {
-        inlineData: {
-          mimeType: "image/jpeg",
-          data: base64,
-        },
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: base64,
       },
-      "Is there a human in this image? Answer only: yes or no",
-    ]);
+    );
 
-    const answer = result.response.text().toLowerCase().trim();
-    const human = answer.startsWith("yes");
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Roboflow error ${response.status}: ${text}`);
+    }
+
+    const data = await response.json();
+
+    // Check if any prediction is a "person"
+    const human =
+      data.predictions?.some(
+        (p: { class: string; confidence: number }) =>
+          p.class === "person" && p.confidence > 0.4,
+      ) ?? false;
 
     return Response.json({ human, human_detected: human });
   } catch (err: any) {
     console.error("Vision error:", err?.message ?? err);
     return Response.json(
-      {
-        error: "Vision check failed",
-        detail: err?.message ?? String(err), // ← return actual error
-      },
+      { error: "Vision check failed", detail: err?.message ?? String(err) },
       { status: 500 },
     );
   }
