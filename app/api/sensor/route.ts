@@ -1,11 +1,8 @@
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { getSupabaseClient } from "@/lib/supabase";
 
 export async function POST(req: Request) {
+  const supabase = getSupabaseClient();
+
   try {
     const body = await req.json();
     const {
@@ -48,6 +45,8 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
+  const supabase = getSupabaseClient();
+
   const { data, error } = await supabase
     .from("sensor_readings")
     .select("*")
