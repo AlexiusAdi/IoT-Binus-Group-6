@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     // Send to Roboflow
     const response = await fetch(
-      `https://detect.roboflow.com/coco/7?api_key=${apiKey}`,
+      `https://detect.roboflow.com/person-detection-xiqfx/1?api_key=${apiKey}`,
       {
         method: "POST",
         headers: {
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     console.log(
       "Base64 preview (paste to https://base64.guru/converter/decode/image):",
     );
-    console.log(base64.substring(0, 100) + "...");
+    console.log("FULL_B64:", base64);
 
     if (!response.ok) {
       throw new Error(`Roboflow error ${response.status}: ${text}`);
@@ -60,8 +60,7 @@ export async function POST(req: NextRequest) {
 
     const human =
       data.predictions?.some(
-        (p: { class: string; confidence: number }) =>
-          p.class === "person" && p.confidence > 0.4,
+        (p: { class: string; confidence: number }) => p.confidence > 0.3,
       ) ?? false;
 
     console.log("Human detected:", human);
