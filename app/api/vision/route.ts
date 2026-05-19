@@ -13,29 +13,23 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Receive raw JPEG bytes from ESP32
+    // Receive raw JPEG from ESP32
     const imageBytes = await req.arrayBuffer();
     const buffer = Buffer.from(imageBytes);
 
-    // Debug logs
     console.log("Image size:", buffer.length);
 
-    if (buffer.length < 100) {
-      throw new Error("Image too small");
+    // Validate JPEG
+    if (buffer.length < 100 || buffer[0] !== 0xff || buffer[1] !== 0xd8) {
+      throw new Error("Invalid JPEG image");
     }
 
-    console.log(
-      "JPEG magic bytes:",
-      buffer[0].toString(16),
-      buffer[1].toString(16),
-    );
+    // Convert to PURE base64
+    const base64 = buffer.toString("base64");
 
-    // Verify JPEG header
-    if (!(buffer[0] === 0xff && buffer[1] === 0xd8)) {
-      throw new Error("Invalid JPEG format");
-    }
+    console.log("Base64 length:", base64.length);
 
-    // Send RAW image directly to Roboflow
+    // Send to Roboflow
     const response = await fetch(
       `https://detect.roboflow.com/coco/7?api_key=${apiKey}`,
       {
@@ -43,32 +37,21 @@ export async function POST(req: NextRequest) {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: buffer,
+        body: base64,
       },
     );
 
-    // Debug Roboflow response
-    const responseText = await response.text();
+    const text = await response.text();
 
     console.log("Roboflow status:", response.status);
-    console.log("Roboflow raw response:", responseText);
+    console.log("Roboflow raw:", text);
 
     if (!response.ok) {
-      throw new Error(`Roboflow error ${response.status}: ${responseText}`);
+      throw new Error(`Roboflow error ${response.status}: ${text}`);
     }
 
-    // Parse JSON safely
-    let data: any;
+    const data = JSON.parse(text);
 
-    try {
-      data = JSON.parse(responseText);
-    } catch {
-      throw new Error("Failed to parse Roboflow JSON");
-    }
-
-    console.log("Predictions:", JSON.stringify(data.predictions ?? []));
-
-    // Detect human/person
     const human =
       data.predictions?.some(
         (p: { class: string; confidence: number }) =>
