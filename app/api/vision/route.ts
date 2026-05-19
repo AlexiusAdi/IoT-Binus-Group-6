@@ -1,7 +1,13 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export async function POST(req: Request) {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return Response.json({ error: "Missing GEMINI_API_KEY" }, { status: 500 });
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
 
   try {
     const imageBytes = await req.arrayBuffer();
@@ -23,8 +29,14 @@ export async function POST(req: Request) {
     const human = answer.startsWith("yes");
 
     return Response.json({ human, human_detected: human });
-  } catch (err) {
-    console.error(err);
-    return Response.json({ error: "Vision check failed" }, { status: 500 });
+  } catch (err: any) {
+    console.error("Vision error:", err?.message ?? err);
+    return Response.json(
+      {
+        error: "Vision check failed",
+        detail: err?.message ?? String(err), // ← return actual error
+      },
+      { status: 500 },
+    );
   }
 }
