@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import { getSupabaseClient } from "@/lib/supabase";
 
-const supabase = getSupabaseClient();
-
 interface SensorReading {
   id?: number;
   temperature: number;
@@ -218,7 +216,7 @@ export default function Home() {
   const [tick, setTick] = useState(0);
   const [flash, setFlash] = useState(false);
 
-  console.log(data?.vision_checked, data?.human_detected);
+  const supabase = getSupabaseClient();
 
   useEffect(() => {
     // 1. Load latest on mount
