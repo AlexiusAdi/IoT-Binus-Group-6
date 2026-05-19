@@ -1,5 +1,6 @@
 // app/api/vision/route.ts
 
+import { writeFileSync } from "fs";
 import { NextRequest } from "next/server";
 
 export async function POST(req: NextRequest) {
@@ -45,6 +46,11 @@ export async function POST(req: NextRequest) {
 
     console.log("Roboflow status:", response.status);
     console.log("Roboflow raw:", text);
+
+    console.log(
+      "Base64 preview (paste to https://base64.guru/converter/decode/image):",
+    );
+    console.log(base64.substring(0, 100) + "...");
 
     if (!response.ok) {
       throw new Error(`Roboflow error ${response.status}: ${text}`);
