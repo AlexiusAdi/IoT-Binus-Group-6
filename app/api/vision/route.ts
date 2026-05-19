@@ -13,9 +13,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const imageBytes = await req.arrayBuffer();
-    const base64 = Buffer.from(imageBytes).toString("base64");
+    const buffer = Buffer.from(imageBytes);
+    const base64 = buffer.toString("base64");
 
-    // Roboflow wants base64 sent as a JSON body
+    // Log for debugging
+    console.log("Image size (bytes):", buffer.length);
+    console.log("Base64 length:", base64.length);
+    console.log(
+      "JPEG magic bytes:",
+      buffer[0].toString(16),
+      buffer[1].toString(16),
+    ); // should be ff d8
+
     const response = await fetch(
       `https://detect.roboflow.com/coco/7?api_key=${apiKey}`,
       {
@@ -31,6 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await response.json();
+    console.log("Roboflow response:", JSON.stringify(data));
 
     const human =
       data.predictions?.some(
