@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     const answer = result.response.text().toLowerCase().trim();
     const human = answer.startsWith("yes");
 
-    return Response.json({ human });
+    return Response.json({ human, human_detected: human });
   } catch (err) {
     console.error(err);
     return Response.json({ error: "Vision check failed" }, { status: 500 });
