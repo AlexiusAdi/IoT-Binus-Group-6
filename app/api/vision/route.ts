@@ -13,13 +13,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const imageBytes = await req.arrayBuffer();
+    const base64 = Buffer.from(imageBytes).toString("base64");
 
+    // Roboflow wants base64 sent as a JSON body
     const response = await fetch(
       `https://detect.roboflow.com/coco/7?api_key=${apiKey}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: imageBytes, // send raw binary directly, no base64
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: base64 }),
       },
     );
 
