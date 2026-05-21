@@ -1,8 +1,30 @@
+/**
+ * app/page.tsx
+ *
+ * Halaman utama dashboard monitoring sensor IoT secara real-time.
+ *
+ * Fitur:
+ * - Menampilkan pembacaan sensor terbaru (suhu, kelembaban, cahaya)
+ * - Status deteksi gerak (PIR) dan kehadiran manusia (Roboflow)
+ * - Gauge visual berbasis SVG dengan animasi transisi
+ * - Comfort Index berdasarkan Heat Index formula
+ * - Light Condition berdasarkan rentang nilai lux
+ * - Raw payload JSON dari ESP32
+ * - Realtime update via Supabase Realtime (WebSocket postgres_changes)
+ * - Flash animation saat data baru masuk
+ * - Responsive untuk mobile (2 kolom) dan desktop (3 kolom)
+ */
+
 "use client";
 
 import { useEffect, useState } from "react";
 import { getSupabaseClient } from "@/lib/supabase";
 
+/**
+ * Tipe data untuk satu baris dari tabel sensor_readings di Supabase.
+ * Field opsional (?) mencerminkan bahwa data lama mungkin tidak memiliki
+ * kolom yang ditambahkan belakangan (human_detected, vision_checked).
+ */
 interface SensorReading {
   id?: number;
   temperature: number;
@@ -15,6 +37,15 @@ interface SensorReading {
   device_id?: string;
 }
 
+// ──────────────────────────────────────────────────────────────
+// UTILITY FUNCTIONS
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Memformat string ISO timestamp menjadi waktu HH:MM:SS (24 jam).
+ * @param iso  String ISO 8601 dari Supabase (contoh: "2025-01-15T10:30:45Z")
+ * @returns    String waktu lokal, contoh: "10:30:45"
+ */
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -24,6 +55,11 @@ function formatTime(iso: string) {
   });
 }
 
+/**
+ * Memformat string ISO timestamp menjadi tanggal singkat.
+ * @param iso  String ISO 8601 dari Supabase
+ * @returns    String tanggal lokal, contoh: "Jan 15, 2025"
+ */
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
     year: "numeric",
@@ -32,6 +68,15 @@ function formatDate(iso: string) {
   });
 }
 
+/**
+ * Menghitung Heat Index (indeks panas terasa) dari suhu dan kelembaban.
+ * Menggunakan persamaan Rothfusz Regression yang digunakan oleh NOAA/NWS.
+ * Akurat untuk suhu >= 27°C dan kelembaban >= 40%.
+ *
+ * @param t  Suhu dalam °C
+ * @param h  Kelembaban relatif dalam %
+ * @returns  Heat Index dalam °C
+ */
 function getHeatIndex(t: number, h: number) {
   return (
     -8.78469475556 +
@@ -46,6 +91,14 @@ function getHeatIndex(t: number, h: number) {
   );
 }
 
+/**
+ * Menentukan label dan warna Comfort Index berdasarkan Heat Index.
+ * Rentang disesuaikan dengan kondisi iklim tropis Indonesia.
+ *
+ * @param t  Suhu dalam °C
+ * @param h  Kelembaban relatif dalam %
+ * @returns  Objek dengan label, warna teks, dan warna background
+ */
 function comfortLabel(
   t: number,
   h: number,
@@ -58,6 +111,18 @@ function comfortLabel(
   return { label: "DANGER", color: "#dc2626", bg: "#fef2f2" };
 }
 
+/**
+ * Menentukan label dan warna Light Condition berdasarkan nilai lux.
+ * Rentang berdasarkan standar pencahayaan ruangan umum (lux):
+ * < 10   : Gelap (malam hari tanpa lampu)
+ * 10-50  : Redup (lorong, kamar tidur malam)
+ * 50-200 : Indoor normal (ruang kerja, ruang tamu)
+ * 200-1000: Terang (area kerja intensif, dekat jendela)
+ * > 1000 : Cahaya matahari langsung
+ *
+ * @param lux  Intensitas cahaya dalam lux dari BH1750
+ * @returns    Objek dengan label, warna teks, dan warna background
+ */
 function lightLabel(lux: number): { label: string; color: string; bg: string } {
   if (lux < 10) return { label: "DARK", color: "#6b7280", bg: "#f9fafb" };
   if (lux < 50) return { label: "DIM", color: "#92400e", bg: "#fffbeb" };
@@ -66,6 +131,23 @@ function lightLabel(lux: number): { label: string; color: string; bg: string } {
   return { label: "SUNLIGHT", color: "#c2410c", bg: "#fff7ed" };
 }
 
+// ──────────────────────────────────────────────────────────────
+// KOMPONEN: Gauge
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * Gauge
+ * Komponen visualisasi nilai sensor berbentuk lingkaran busur SVG.
+ * Arc menempati 72% lingkaran penuh (260 derajat) untuk estetika.
+ * Animasi transisi CSS digunakan saat nilai berubah.
+ *
+ * @param value  Nilai saat ini
+ * @param max    Nilai maksimum (menentukan pengisian busur)
+ * @param color  Warna hex busur aktif
+ * @param unit   Satuan yang ditampilkan di bawah nilai (°C, %, lx)
+ * @param label  Label di atas gauge (TEMPERATURE, HUMIDITY, LIGHT)
+ * @param sub    Teks kecil opsional di bawah gauge (misal: konversi °F)
+ */
 function Gauge({
   value,
   max,
@@ -81,12 +163,13 @@ function Gauge({
   label: string;
   sub?: string;
 }) {
-  const pct = Math.min(Math.max(value / max, 0), 1);
-  const r = 48;
-  const circ = 2 * Math.PI * r;
-  const arc = circ * 0.72;
-  const filled = arc * pct;
-  const offset = circ * 0.14;
+  // Hitung panjang busur berdasarkan persentase nilai terhadap max
+  const pct = Math.min(Math.max(value / max, 0), 1); // clamp 0-1
+  const r = 48; // radius lingkaran dalam SVG unit
+  const circ = 2 * Math.PI * r; // keliling penuh
+  const arc = circ * 0.72; // panjang busur aktif (72% lingkaran)
+  const filled = arc * pct; // panjang busur yang terisi
+  const offset = circ * 0.14; // offset rotasi agar busur mulai dari bawah-kiri
 
   return (
     <div
@@ -103,6 +186,7 @@ function Gauge({
         transition: "transform 0.2s ease, box-shadow 0.2s ease",
       }}
     >
+      {/* Label gauge */}
       <div
         style={{
           fontSize: 10,
@@ -117,7 +201,7 @@ function Gauge({
       </div>
 
       <svg viewBox="0 0 110 110" width={130} height={130}>
-        {/* Track */}
+        {/* Track: busur latar belakang (abu-abu) */}
         <circle
           cx="55"
           cy="55"
@@ -129,7 +213,7 @@ function Gauge({
           strokeDashoffset={-offset}
           strokeLinecap="round"
         />
-        {/* Fill */}
+        {/* Fill: busur aktif dengan animasi dan glow effect */}
         <circle
           cx="55"
           cy="55"
@@ -145,7 +229,7 @@ function Gauge({
             filter: `drop-shadow(0 0 6px ${color}40)`,
           }}
         />
-        {/* Value */}
+        {/* Nilai numerik di tengah gauge */}
         <text
           x="55"
           y="50"
@@ -157,7 +241,7 @@ function Gauge({
         >
           {value.toFixed(1)}
         </text>
-        {/* Unit */}
+        {/* Satuan di bawah nilai */}
         <text
           x="55"
           y="66"
@@ -170,6 +254,7 @@ function Gauge({
         </text>
       </svg>
 
+      {/* Teks sub-informasi opsional, contoh: konversi suhu ke °F */}
       {sub && (
         <div
           style={{
@@ -185,10 +270,21 @@ function Gauge({
   );
 }
 
+// ──────────────────────────────────────────────────────────────
+// KOMPONEN: StatusDot
+// ──────────────────────────────────────────────────────────────
+
+/**
+ * StatusDot
+ * Indikator status koneksi berbentuk lingkaran kecil di header.
+ * - "ok"      : hijau, animasi bernapas (koneksi aktif)
+ * - "error"   : merah, statis
+ * - lainnya   : kuning (loading/waiting)
+ *
+ * @param status  String status koneksi
+ */
 function StatusDot({ status }: { status: string }) {
   const color =
-    status === "ok" ? "#86efac" : status === "error" ? "#fca5a5" : "#fcd34d";
-  const glow =
     status === "ok" ? "#86efac" : status === "error" ? "#fca5a5" : "#fcd34d";
   return (
     <span
@@ -198,7 +294,7 @@ function StatusDot({ status }: { status: string }) {
         height: 7,
         borderRadius: "50%",
         background: color,
-        boxShadow: `0 0 0 2px ${glow}44, 0 0 10px ${glow}66`,
+        boxShadow: `0 0 0 2px ${color}44, 0 0 10px ${color}66`,
         animation:
           status === "ok" ? "breathe 2.5s ease-in-out infinite" : "none",
         flexShrink: 0,
@@ -207,38 +303,61 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
+// ──────────────────────────────────────────────────────────────
+// HALAMAN UTAMA
+// ──────────────────────────────────────────────────────────────
+
 export default function Home() {
+  // State utama: data sensor terbaru dari Supabase
   const [data, setData] = useState<SensorReading | null>(null);
+
+  // Status koneksi: "loading" | "ok" | "error" | "waiting"
+  // - loading : sedang fetch pertama kali
+  // - ok      : data berhasil diterima
+  // - error   : koneksi gagal
+  // - waiting : koneksi ok tapi tabel masih kosong
   const [status, setStatus] = useState<"loading" | "ok" | "error" | "waiting">(
     "loading",
   );
+
+  // Waktu terakhir data berhasil diterima (untuk ditampilkan di header)
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
+
+  // Counter jumlah update realtime yang diterima sejak halaman dibuka
   const [tick, setTick] = useState(0);
+
+  // Trigger animasi flash saat data baru masuk via realtime
   const [flash, setFlash] = useState(false);
 
   const supabase = getSupabaseClient();
 
   useEffect(() => {
-    // 1. Load latest on mount
+    // ── FETCH AWAL ──────────────────────────────────────────
+    // Ambil data terbaru saat halaman pertama dimuat,
+    // sebelum realtime subscription aktif.
     supabase
       .from("sensor_readings")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(1)
-      .maybeSingle() // ← was .single()
+      .maybeSingle() // gunakan maybeSingle agar tidak error jika tabel kosong
       .then(({ data: row, error }) => {
         console.log("row:", row);
-        console.log("error:", error); // ← add this
+        console.log("error:", error);
         if (row && !error) {
           setData(row);
           setStatus("ok");
         } else {
-          setStatus("waiting");
+          setStatus("waiting"); // tabel kosong, tunggu data dari ESP32
         }
         setLastFetch(new Date());
       });
 
-    // 2. Realtime subscription
+    // ── REALTIME SUBSCRIPTION ───────────────────────────────
+    // Subscribe ke perubahan INSERT pada tabel sensor_readings.
+    // Setiap kali ESP32 mengirim data baru, Supabase akan mengirim
+    // event via WebSocket dan komponen ini akan langsung terupdate
+    // tanpa perlu polling manual.
     const channel = supabase
       .channel("sensor_live")
       .on(
@@ -248,18 +367,22 @@ export default function Home() {
           setData(payload.new as SensorReading);
           setStatus("ok");
           setLastFetch(new Date());
-          setTick((t) => t + 1);
+          setTick((t) => t + 1); // increment counter update
+
+          // Aktifkan flash animation selama 600ms
           setFlash(true);
           setTimeout(() => setFlash(false), 600);
         },
       )
       .subscribe();
 
+    // Cleanup: unsubscribe saat komponen unmount untuk mencegah memory leak
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, []); // dependency array kosong = hanya dijalankan sekali saat mount
 
+  // Hitung label comfort dan light dari data terbaru
   const comfort = data ? comfortLabel(data.temperature, data.humidity) : null;
   const light = data ? lightLabel(data.lux ?? 0) : null;
 
@@ -277,44 +400,51 @@ export default function Home() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap');
 
+        /* Animasi StatusDot saat koneksi aktif */
         @keyframes breathe {
           0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.6; transform: scale(0.85); }
+          50%       { opacity: 0.6; transform: scale(0.85); }
         }
 
+        /* Animasi kemunculan konten saat data pertama diterima */
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(8px); }
           to   { opacity: 1; transform: translateY(0); }
         }
 
+        /* Animasi flash hijau saat data realtime baru masuk */
         @keyframes flashPulse {
           0%   { box-shadow: 0 0 0 0 rgba(134,239,172,0.5); }
           70%  { box-shadow: 0 0 0 10px rgba(134,239,172,0); }
           100% { box-shadow: 0 0 0 0 rgba(134,239,172,0); }
         }
 
+        /* Efek hover pada kartu gauge */
         .card-hover:hover {
           transform: translateY(-2px);
           box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06) !important;
         }
 
-        .data-appear {
-          animation: fadeIn 0.4s ease forwards;
-        }
+        .data-appear { animation: fadeIn 0.4s ease forwards; }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
+        /* Responsive: 2 kolom untuk layar medium */
         @media (max-width: 680px) {
           .gauge-grid { grid-template-columns: 1fr 1fr !important; }
           .header-inner { flex-direction: column; gap: 10px; align-items: flex-start !important; }
         }
 
+        /* Responsive: 1 kolom untuk layar kecil */
         @media (max-width: 420px) {
           .gauge-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
 
-      {/* ── Header ── */}
+      {/* ── HEADER ─────────────────────────────────────────────
+          Sticky header dengan status koneksi, timestamp update terakhir,
+          dan counter jumlah update realtime yang diterima.
+      */}
       <header
         style={{
           borderBottom: "1px solid #ede9e4",
@@ -348,6 +478,7 @@ export default function Home() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          {/* Waktu update terakhir */}
           {lastFetch && (
             <div style={{ textAlign: "right" }}>
               <div
@@ -365,6 +496,7 @@ export default function Home() {
               </div>
             </div>
           )}
+          {/* Counter realtime updates */}
           <div
             style={{
               fontSize: 9,
@@ -380,7 +512,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* ── Main ── */}
+      {/* ── MAIN CONTENT ───────────────────────────────────────── */}
       <main
         style={{
           flex: 1,
@@ -390,7 +522,7 @@ export default function Home() {
           padding: "44px 24px 60px",
         }}
       >
-        {/* Loading */}
+        {/* State: sedang menghubungkan ke Supabase */}
         {status === "loading" && (
           <div
             style={{
@@ -405,7 +537,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Waiting */}
+        {/* State: terhubung tapi belum ada data dari ESP32 */}
         {status === "waiting" && (
           <div style={{ textAlign: "center", paddingTop: 100 }}>
             <div
@@ -434,7 +566,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Error */}
+        {/* State: koneksi Supabase gagal */}
         {status === "error" && (
           <div
             style={{
@@ -449,13 +581,17 @@ export default function Home() {
           </div>
         )}
 
-        {/* Data */}
+        {/* State: data tersedia — tampilkan seluruh dashboard */}
         {data && (
           <div
             className="data-appear"
             style={{ display: "flex", flexDirection: "column", gap: 20 }}
           >
-            {/* Device + time row */}
+            {/* ── BARIS INFO PERANGKAT ──────────────────────────
+                Menampilkan: device ID, status gerak PIR,
+                status deteksi manusia (jika vision_checked),
+                dan timestamp pembacaan terakhir.
+            */}
             <div
               style={{
                 display: "flex",
@@ -466,9 +602,11 @@ export default function Home() {
                 border: "1px solid #f0ede8",
                 borderRadius: 16,
                 boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                // Aktifkan flash animation saat data realtime baru masuk
                 ...(flash ? { animation: "flashPulse 0.6s ease" } : {}),
               }}
             >
+              {/* Device ID */}
               <div>
                 <div
                   style={{
@@ -492,7 +630,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Motion badge */}
+              {/* Badge status gerak PIR */}
               <div
                 style={{
                   display: "flex",
@@ -525,6 +663,7 @@ export default function Home() {
                 </span>
               </div>
 
+              {/* Badge status deteksi manusia Roboflow (hanya tampil jika vision_checked=true) */}
               {data.vision_checked && (
                 <div
                   style={{
@@ -561,6 +700,7 @@ export default function Home() {
                 </div>
               )}
 
+              {/* Tanggal dan waktu pembacaan sensor */}
               <div style={{ textAlign: "right" }}>
                 <div
                   style={{ fontSize: 11, color: "#b8a99a", marginBottom: 2 }}
@@ -580,7 +720,11 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Gauges */}
+            {/* ── GAUGE GRID ────────────────────────────────────
+                Tiga gauge: Suhu, Kelembaban, Cahaya.
+                Responsive: 3 kolom → 2 kolom → 1 kolom.
+                Suhu juga menampilkan konversi ke °F sebagai sub-info.
+            */}
             <div
               className="gauge-grid"
               style={{
@@ -619,6 +763,7 @@ export default function Home() {
                 className="card-hover"
                 style={{ transition: "transform 0.2s, box-shadow 0.2s" }}
               >
+                {/* Lux dibatasi maksimum 1000 untuk skala gauge yang proporsional */}
                 <Gauge
                   value={Math.min(data.lux ?? 0, 1000)}
                   max={1000}
@@ -630,7 +775,11 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Comfort + Light condition row */}
+            {/* ── COMFORT INDEX & LIGHT CONDITION ───────────────
+                Dua kartu analisis kondisi ruangan:
+                - Comfort Index: berdasarkan Heat Index formula NOAA
+                - Light Condition: berdasarkan rentang nilai lux
+            */}
             <div
               style={{
                 display: "grid",
@@ -750,7 +899,11 @@ export default function Home() {
               )}
             </div>
 
-            {/* Raw output */}
+            {/* ── RAW PAYLOAD ───────────────────────────────────
+                Menampilkan data JSON mentah yang diterima dari ESP32,
+                dengan syntax highlighting warna per field.
+                Berguna untuk debugging dan verifikasi data.
+            */}
             <div
               style={{
                 background: "#ffffff",
@@ -779,45 +932,40 @@ export default function Home() {
                   fontFamily: "'DM Mono', 'Courier New', monospace",
                 }}
               >
-                {`{
-  "temperature": `}
+                {`{\n  "temperature": `}
                 <span style={{ color: "#f97316" }}>
                   {data.temperature.toFixed(2)}
                 </span>
-                {`,
-  "humidity":    `}
+                {`,\n  "humidity":    `}
                 <span style={{ color: "#38bdf8" }}>
                   {data.humidity.toFixed(2)}
                 </span>
-                {`,
-  "lux":         `}
+                {`,\n  "lux":         `}
                 <span style={{ color: "#fbbf24" }}>
                   {(data.lux ?? 0).toFixed(0)}
                 </span>
-                {`,
-  "motion":      `}
+                {`,\n  "motion":      `}
                 <span style={{ color: data.motion ? "#22c55e" : "#b8a99a" }}>
                   {String(data.motion)}
                 </span>
-                {`,
-  "device_id":   `}
+                {`,\n  "device_id":   `}
                 <span style={{ color: "#c2410c" }}>
                   &quot;{data.device_id ?? "esp32"}&quot;
                 </span>
-                {`,
-  "created_at":  `}
+                {`,\n  "created_at":  `}
                 <span style={{ color: "#94a3b8" }}>
                   &quot;{data.created_at}&quot;
                 </span>
-                {`
-}`}
+                {`\n}`}
               </pre>
             </div>
           </div>
         )}
       </main>
 
-      {/* ── Footer ── */}
+      {/* ── FOOTER ─────────────────────────────────────────────
+          Informasi singkat teknologi yang digunakan dan device ID aktif.
+      */}
       <footer
         style={{
           borderTop: "1px solid #ede9e4",
